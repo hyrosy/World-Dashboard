@@ -14,8 +14,39 @@ import { Separator } from '@/components/ui/separator';
 interface AuthPayload {
   token: string;
   siteUrl: string;
-  userId?: number; // Make userId optional
+  userId?: number;
   username: string;
+}
+
+// FIX 1: Replaced 'any' with a specific type for the meta object
+interface BookingMeta {
+  wp_travel_engine_booking_status?: string;
+  wp_travel_engine_booking_payment_method?: string;
+  cart_info?: {
+    totals?: {
+      total?: string;
+    };
+    currency?: string;
+  };
+  wptravelengine_billing_details?: {
+    fname?: string;
+    lname?: string;
+    email?: string;
+  };
+  wp_travel_engine_booking_setting?: {
+    place_order?: {
+      traveler?: string;
+    };
+  };
+  wte_order_items?: {
+    [key: string]: {
+      title?: string;
+      price?: string;
+      currency?: {
+        symbol?: string;
+      };
+    };
+  };
 }
 
 // Represents the basic data for an item in the list
@@ -25,11 +56,11 @@ interface ApiItem {
   title: {
     rendered: string;
   };
-  meta: any; // Meta will be fully available from our custom endpoint
+  trip_name?: string; // This is added from the PHP function
+  meta: BookingMeta;
 }
 
 interface ItemDetails extends ApiItem {
-    trip_name: string;
     customer_name?: string;
     customer_email?: string;
     status?: string;
@@ -37,8 +68,6 @@ interface ItemDetails extends ApiItem {
     total_price?: string;
     payment_gateway?: string;
 }
-
-
 
 // Reusable component for the loading spinner
 function Loader({ size = 'w-10 h-10' }) {
@@ -59,14 +88,16 @@ export default function Home() {
     const [enquiries, setEnquiries] = useState<ApiItem[]>([]);
     const [currentUsername, setCurrentUsername] = useState('');
     const [selectedItemDetails, setSelectedItemDetails] = useState<ItemDetails | null>(null);
-    const [userId, setUserId] = useState<number | null>(null); // Store userId if needed    
+    // FIX 2: Removed unused userId state
+    // const [userId, setUserId] = useState<number | null>(null);
+
     // Check for stored login on initial load
     useEffect(() => {
         const storedAuth = localStorage.getItem('providerAuth');
         if (storedAuth) {
             const auth: AuthPayload = JSON.parse(storedAuth);
             setCurrentUsername(auth.username);
-            setUserId(auth.userId ?? null);
+            // setUserId(auth.userId ?? null); // No longer needed
             setIsLoggedIn(true);
         }
         setIsLoading(false);
@@ -74,45 +105,43 @@ export default function Home() {
 
     // Fetch data when user logs in
     useEffect(() => {
-    if (isLoggedIn) {
-        fetchData();
-    }
-}, [isLoggedIn]);
-
+        if (isLoggedIn) {
+            fetchData();
+        }
+    }, [isLoggedIn]);
 
     // JWT LOGIN LOGIC
     const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setLoginError('');
-    try {
-        // Use the environment variable for the API URL
-        const apiUrl = process.env.NEXT_PUBLIC_WORDPRESS_API_URL;
-        const tokenResponse = await fetch(`${apiUrl}/wp-json/jwt-auth/v1/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password: appPassword }),
-        });
+        e.preventDefault();
+        setIsLoading(true);
+        setLoginError('');
+        try {
+            const apiUrl = process.env.NEXT_PUBLIC_WORDPRESS_API_URL;
+            const tokenResponse = await fetch(`${apiUrl}/wp-json/jwt-auth/v1/token`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password: appPassword }),
+            });
 
-        if (!tokenResponse.ok) {
-             const errorData = await tokenResponse.json();
-             throw new Error(errorData.message || 'Invalid username or password.');
+            if (!tokenResponse.ok) {
+                 const errorData = await tokenResponse.json();
+                 throw new Error(errorData.message || 'Invalid username or password.');
+            }
+            const tokenData = await tokenResponse.json();
+            const authPayload: AuthPayload = {
+                username: tokenData.user_display_name,
+                siteUrl: apiUrl || '',
+                token: tokenData.token,
+            };
+            localStorage.setItem('providerAuth', JSON.stringify(authPayload));
+            setCurrentUsername(authPayload.username);
+            setIsLoggedIn(true);
+        } catch (error) {
+            setLoginError(error instanceof Error ? error.message : String(error));
+        } finally {
+            setIsLoading(false);
         }
-        const tokenData = await tokenResponse.json();
-        const authPayload: AuthPayload = {
-            username: tokenData.user_display_name,
-            siteUrl: apiUrl || '', // Store the URL from the env variable, fallback to empty string
-            token: tokenData.token,
-        };
-        localStorage.setItem('providerAuth', JSON.stringify(authPayload));
-        setCurrentUsername(authPayload.username);
-        setIsLoggedIn(true);
-    } catch (error) {
-        setLoginError(error instanceof Error ? error.message : String(error));
-    } finally {
-        setIsLoading(false);
-    }
-};
+    };
 
     const handleLogout = () => {
         localStorage.removeItem('providerAuth');
@@ -120,12 +149,11 @@ export default function Home() {
         setUsername('');
         setAppPassword('');
         setCurrentUsername('');
-        setUserId(null);
+        // setUserId(null); // No longer needed
         setBookings([]);
         setEnquiries([]);
     };
 
-    // --- *** FINAL, SIMPLIFIED FETCH DATA LOGIC USING YOUR PLUGIN'S API *** ---
     const fetchData = async () => {
         setIsLoading(true);
         const storedAuthRaw = localStorage.getItem('providerAuth');
@@ -137,7 +165,6 @@ export default function Home() {
         const headers = { 'Authorization': `Bearer ${storedAuth.token}` };
 
         try {
-            // Make a single, powerful call to the new endpoint you created in your plugin.
             const response = await fetch(`${storedAuth.siteUrl}/wp-json/my-listings/v1/dashboard`, { headers });
 
             if (!response.ok) {
@@ -146,7 +173,6 @@ export default function Home() {
 
             const data: { bookings: ApiItem[], enquiries: ApiItem[] } = await response.json();
 
-            // The data is already filtered by your plugin! We just display it.
             setBookings(data.bookings || []);
             setEnquiries(data.enquiries || []);
 
@@ -158,63 +184,57 @@ export default function Home() {
         }
     };
     
-    // This function now just formats the data for the dialog
     const formatItemDetails = (item: ApiItem): ItemDetails => {
-    const orderItems = item.meta?.wte_order_items;
-    const bookingSettings = item.meta?.wp_travel_engine_booking_setting || {};
-    const billingDetails = item.meta?.wptravelengine_billing_details || {};
-    const meta = item.meta || {};
-    const cartInfo = meta.cart_info || {};
-    
-    let trip_name = 'Unknown Trip';
-    // Total price and currency
-    let totalPrice = parseFloat(cartInfo.totals?.total || 0);
-    let currencySymbol = cartInfo.currency === 'USD' ? '$' : cartInfo.currency; // Default to '$' or use provided code
-    let formattedPrice = `${currencySymbol || '$'}${totalPrice.toFixed(2)}`;
+        const meta = item.meta || {};
+        const orderItems = meta.wte_order_items;
+        const billingDetails = meta.wptravelengine_billing_details || {};
+        const cartInfo = meta.cart_info || {};
+        
+        // Use the trip_name sent directly from the API
+        let trip_name = item.trip_name || 'Unknown Trip';
 
-    // --- Calculate Total Price and Trip Name from Order Items ---
-    if (orderItems) {
-        try {
-            // Get trip name from the first item
-            const firstItemKey = Object.keys(orderItems)[0];
-            trip_name = orderItems[firstItemKey]?.title || 'Unknown Trip';
+        // Recalculate price and currency just in case, but primarily use cart_info
+        let totalPrice = parseFloat(cartInfo.totals?.total || '0');
+        let currencySymbol = cartInfo.currency === 'USD' ? '$' : cartInfo.currency;
 
-            // Sum up the price of all items in the order
-            for (const key in orderItems) {
-                if (orderItems.hasOwnProperty(key)) {
-                    totalPrice += parseFloat(orderItems[key].price || 0);
-                    // Try to get currency from the order data
-                    if (orderItems[key].currency && orderItems[key].currency.symbol) {
-                         currencySymbol = orderItems[key].currency.symbol;
+        if (orderItems) {
+            try {
+                // This part can serve as a fallback if cart_info is missing details
+                // but we won't redeclare totalPrice here to avoid confusion.
+                for (const key in orderItems) {
+                    if (orderItems.hasOwnProperty(key)) {
+                         if (orderItems[key].currency && orderItems[key].currency.symbol) {
+                            currencySymbol = orderItems[key].currency.symbol;
+                         }
                     }
                 }
-            }
-        } catch (e) { /* ignore errors */ }
-    }
+            } catch { /* FIX 5: Removed unused 'e' variable */ }
+        }
+        
+        // FIX 4: Changed 'let' to 'const'
+        const formattedPrice = `${currencySymbol || '$'}${totalPrice.toFixed(2)}`;
 
-    // --- Extract other details ---
-    const travelers = parseInt(meta.wp_travel_engine_booking_setting?.place_order?.traveler || '0');
-    const status = meta.wp_travel_engine_booking_status || 'N/A';
-    const payment_gateway = meta.wp_travel_engine_booking_payment_method || 'N/A';
+        // FIX 3: Removed unused 'bookingSettings' and accessed meta directly.
+        const travelers = parseInt(meta.wp_travel_engine_booking_setting?.place_order?.traveler || '0');
+        const status = meta.wp_travel_engine_booking_status || 'N/A';
+        const payment_gateway = meta.wp_travel_engine_booking_payment_method || 'N/A';
 
-    return {
-        ...item,
-        trip_name: trip_name,
-        customer_name: `${billingDetails.fname || ''} ${billingDetails.lname || ''}`.trim(),
-        customer_email: billingDetails.email || 'N/A',
-        status: status,
-        travelers: travelers,
-        total_price: formattedPrice,
-        payment_gateway: payment_gateway,
+        return {
+            ...item,
+            trip_name: trip_name,
+            customer_name: `${billingDetails.fname || ''} ${billingDetails.lname || ''}`.trim(),
+            customer_email: billingDetails.email || 'N/A',
+            status: status,
+            travelers: travelers,
+            total_price: formattedPrice,
+            payment_gateway: payment_gateway,
+        };
     };
-    };
-
-    // src/app/page.tsx
 
     const handleCardClick = (item: ApiItem) => {
-    console.log("Clicked Item Meta:", item.meta); // <-- ADD THIS LINE
-    const details = formatItemDetails(item);
-    setSelectedItemDetails(details);
+        // console.log("Clicked Item Meta:", item.meta); // You can re-enable this for debugging
+        const details = formatItemDetails(item);
+        setSelectedItemDetails(details);
     };
 
     if (isLoading && !isLoggedIn) {
@@ -368,4 +388,4 @@ export default function Home() {
         </main>
     );
 }
-
+            
