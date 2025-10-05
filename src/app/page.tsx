@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator';
 interface AuthPayload {
   token: string;
   siteUrl: string;
-  userId: number;
+  userId?: number; // Make userId optional
   username: string;
 }
 
@@ -33,7 +33,11 @@ interface ItemDetails extends ApiItem {
     customer_name?: string;
     customer_email?: string;
     status?: string;
+    travelers?: number;
+    total_price?: string;
+    payment_gateway?: string;
 }
+
 
 
 // Reusable component for the loading spinner
@@ -49,23 +53,20 @@ export default function Home() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [loginError, setLoginError] = useState('');
-    const [siteUrl, setSiteUrl] = useState('https://world.hyrosy.com');
     const [username, setUsername] = useState('');
     const [appPassword, setAppPassword] = useState('');
     const [bookings, setBookings] = useState<ApiItem[]>([]);
     const [enquiries, setEnquiries] = useState<ApiItem[]>([]);
     const [currentUsername, setCurrentUsername] = useState('');
-    const [userId, setUserId] = useState<number | null>(null);
     const [selectedItemDetails, setSelectedItemDetails] = useState<ItemDetails | null>(null);
-
+    const [userId, setUserId] = useState<number | null>(null); // Store userId if needed    
     // Check for stored login on initial load
     useEffect(() => {
         const storedAuth = localStorage.getItem('providerAuth');
         if (storedAuth) {
             const auth: AuthPayload = JSON.parse(storedAuth);
-            setSiteUrl(auth.siteUrl);
             setCurrentUsername(auth.username);
-            setUserId(auth.userId);
+            setUserId(auth.userId ?? null);
             setIsLoggedIn(true);
         }
         setIsLoading(false);
@@ -73,43 +74,45 @@ export default function Home() {
 
     // Fetch data when user logs in
     useEffect(() => {
-        if (isLoggedIn && userId) {
-            fetchData();
-        }
-    }, [isLoggedIn, userId]);
+    if (isLoggedIn) {
+        fetchData();
+    }
+}, [isLoggedIn]);
+
 
     // JWT LOGIN LOGIC
     const handleLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsLoading(true);
-        setLoginError('');
-        try {
-            const tokenResponse = await fetch(`${siteUrl}/wp-json/jwt-auth/v1/token`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password: appPassword }),
-            });
-            if (!tokenResponse.ok) {
-                 const errorData = await tokenResponse.json();
-                 throw new Error(errorData.message || 'Invalid username or password.');
-            }
-            const tokenData = await tokenResponse.json();
-            const authPayload: AuthPayload = {
-                username: tokenData.user_display_name,
-                userId: tokenData.user_id,
-                siteUrl: siteUrl,
-                token: tokenData.token,
-            };
-            localStorage.setItem('providerAuth', JSON.stringify(authPayload));
-            setUserId(authPayload.userId);
-            setCurrentUsername(authPayload.username);
-            setIsLoggedIn(true);
-        } catch (error) {
-            setLoginError(error instanceof Error ? error.message : String(error));
-        } finally {
-            setIsLoading(false);
+    e.preventDefault();
+    setIsLoading(true);
+    setLoginError('');
+    try {
+        // Use the environment variable for the API URL
+        const apiUrl = process.env.NEXT_PUBLIC_WORDPRESS_API_URL;
+        const tokenResponse = await fetch(`${apiUrl}/wp-json/jwt-auth/v1/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password: appPassword }),
+        });
+
+        if (!tokenResponse.ok) {
+             const errorData = await tokenResponse.json();
+             throw new Error(errorData.message || 'Invalid username or password.');
         }
-    };
+        const tokenData = await tokenResponse.json();
+        const authPayload: AuthPayload = {
+            username: tokenData.user_display_name,
+            siteUrl: apiUrl || '', // Store the URL from the env variable, fallback to empty string
+            token: tokenData.token,
+        };
+        localStorage.setItem('providerAuth', JSON.stringify(authPayload));
+        setCurrentUsername(authPayload.username);
+        setIsLoggedIn(true);
+    } catch (error) {
+        setLoginError(error instanceof Error ? error.message : String(error));
+    } finally {
+        setIsLoading(false);
+    }
+};
 
     const handleLogout = () => {
         localStorage.removeItem('providerAuth');
@@ -157,36 +160,61 @@ export default function Home() {
     
     // This function now just formats the data for the dialog
     const formatItemDetails = (item: ApiItem): ItemDetails => {
-        // Extract trip name from booking meta
-        const orderItems = item.meta?.wte_order_items;
-        let trip_name = 'Unknown Trip';
-        if (orderItems) {
-            try {
-                const firstItemKey = Object.keys(orderItems)[0];
-                trip_name = orderItems[firstItemKey]?.title || 'Unknown Trip';
-            } catch (e) { /* ignore */ }
-        }
+    const orderItems = item.meta?.wte_order_items;
+    const bookingSettings = item.meta?.wp_travel_engine_booking_setting || {};
+    const billingDetails = item.meta?.wptravelengine_billing_details || {};
+    const meta = item.meta || {};
+    const cartInfo = meta.cart_info || {};
+    
+    let trip_name = 'Unknown Trip';
+    // Total price and currency
+    let totalPrice = parseFloat(cartInfo.totals?.total || 0);
+    let currencySymbol = cartInfo.currency === 'USD' ? '$' : cartInfo.currency; // Default to '$' or use provided code
+    let formattedPrice = `${currencySymbol || '$'}${totalPrice.toFixed(2)}`;
 
-        // For enquiries, we'd need to fetch the trip name separately if not in meta
-        if (item.meta?.wp_travel_engine_enquiry_trip_id) {
-            // This part can be enhanced later to fetch trip name for enquiries
-        }
+    // --- Calculate Total Price and Trip Name from Order Items ---
+    if (orderItems) {
+        try {
+            // Get trip name from the first item
+            const firstItemKey = Object.keys(orderItems)[0];
+            trip_name = orderItems[firstItemKey]?.title || 'Unknown Trip';
 
-        const bookingSettings = item.meta?.wp_travel_engine_booking_setting || {};
-        const billingDetails = item.meta?.wptravelengine_billing_details || {};
-        
-        return {
-            ...item,
-            trip_name: trip_name,
-            customer_name: `${billingDetails.fname || ''} ${billingDetails.lname || ''}`.trim(),
-            customer_email: billingDetails.email || 'N/A',
-            status: bookingSettings.status || 'N/A'
-        };
+            // Sum up the price of all items in the order
+            for (const key in orderItems) {
+                if (orderItems.hasOwnProperty(key)) {
+                    totalPrice += parseFloat(orderItems[key].price || 0);
+                    // Try to get currency from the order data
+                    if (orderItems[key].currency && orderItems[key].currency.symbol) {
+                         currencySymbol = orderItems[key].currency.symbol;
+                    }
+                }
+            }
+        } catch (e) { /* ignore errors */ }
+    }
+
+    // --- Extract other details ---
+    const travelers = parseInt(meta.wp_travel_engine_booking_setting?.place_order?.traveler || '0');
+    const status = meta.wp_travel_engine_booking_status || 'N/A';
+    const payment_gateway = meta.wp_travel_engine_booking_payment_method || 'N/A';
+
+    return {
+        ...item,
+        trip_name: trip_name,
+        customer_name: `${billingDetails.fname || ''} ${billingDetails.lname || ''}`.trim(),
+        customer_email: billingDetails.email || 'N/A',
+        status: status,
+        travelers: travelers,
+        total_price: formattedPrice,
+        payment_gateway: payment_gateway,
+    };
     };
 
+    // src/app/page.tsx
+
     const handleCardClick = (item: ApiItem) => {
-        const details = formatItemDetails(item);
-        setSelectedItemDetails(details);
+    console.log("Clicked Item Meta:", item.meta); // <-- ADD THIS LINE
+    const details = formatItemDetails(item);
+    setSelectedItemDetails(details);
     };
 
     if (isLoading && !isLoggedIn) {
@@ -196,7 +224,7 @@ export default function Home() {
     return (
         <main className="container mx-auto p-4 md:p-8 max-w-7xl">
             <header className="flex justify-between items-center mb-8">
-                <h1 className="text-3xl font-bold">Provider Dashboard</h1>
+                <h1 className="text-3xl font-bold">hyrosy World Provider</h1>
                 {isLoggedIn && (
                     <div className="flex items-center gap-4">
                         <span className="text-sm text-muted-foreground">{`Logged in as: ${currentUsername}`}</span>
@@ -220,17 +248,13 @@ export default function Home() {
                             )}
                             <form onSubmit={handleLogin} className="space-y-4">
                                 <div className="grid w-full items-center gap-1.5">
-                                    <Label htmlFor="site-url">WordPress Site URL:</Label>
-                                    <Input type="text" id="site-url" value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} placeholder="e.g., https://world.hyrosy.com" />
-                                </div>
-                                <div className="grid w-full items-center gap-1.5">
                                     <Label htmlFor="username">Username:</Label>
                                     <Input type="text" id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
                                 </div>
                                 <div className="grid w-full items-center gap-1.5">
                                     <Label htmlFor="password">Password:</Label>
                                     <Input type="password" id="password" value={appPassword} onChange={(e) => setAppPassword(e.target.value)} />
-                                    <p className="text-xs text-muted-foreground pt-1">Use your main WordPress password.</p>
+                                    <p className="text-xs text-muted-foreground pt-1">Reach out to us if you forgot your password. Or reset it at world.hyrosy.com</p>
                                 </div>
                                 <Button type="submit" className="w-full" disabled={isLoading}>
                                     {isLoading ? <Loader size="w-5 h-5" /> : "Login"}
@@ -293,26 +317,47 @@ export default function Home() {
                         </DialogDescription>}
                     </DialogHeader>
                     {selectedItemDetails && (
-                        <div className="grid gap-4 py-4">
-                            <div className="flex flex-col space-y-1.5">
+
+                        <div className="grid gap-4 py-4 text-sm">
+                            <div className="flex justify-between items-center">
                                 <Label htmlFor="trip-name">Trip Name</Label>
-                                <p id="trip-name" className="text-sm text-muted-foreground">{selectedItemDetails.trip_name}</p>
+                                <p id="trip-name" className="text-muted-foreground">{selectedItemDetails.trip_name}</p>
                             </div>
-                            
+
+                            {/* --- Customer & Booking Details Section --- */}
                             {selectedItemDetails.customer_name && (
                                 <>
                                     <Separator />
-                                    <div className="flex flex-col space-y-1.5">
+                                    <div className="flex justify-between items-center">
                                         <Label htmlFor="customer-name">Customer Name</Label>
-                                        <p id="customer-name" className="text-sm text-muted-foreground">{selectedItemDetails.customer_name}</p>
+                                        <p id="customer-name" className="text-muted-foreground">{selectedItemDetails.customer_name}</p>
                                     </div>
-                                    <div className="flex flex-col space-y-1.5">
+                                    <div className="flex justify-between items-center">
                                         <Label htmlFor="customer-email">Customer Email</Label>
-                                        <p id="customer-email" className="text-sm text-muted-foreground">{selectedItemDetails.customer_email}</p>
+                                        <p id="customer-email" className="text-muted-foreground">{selectedItemDetails.customer_email}</p>
                                     </div>
-                                    <div className="flex flex-col space-y-1.5">
-                                        <Label htmlFor="booking-status">Status</Label>
-                                        <p id="booking-status" className="text-sm font-semibold capitalize">{selectedItemDetails.status}</p>
+                                    <div className="flex justify-between items-center">
+                                        <Label htmlFor="travelers">Travelers</Label>
+                                        <p id="travelers" className="text-muted-foreground">{selectedItemDetails.travelers}</p>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <Label htmlFor="booking-status">Booking Status</Label>
+                                        <p id="booking-status" className="font-semibold capitalize">{selectedItemDetails.status}</p>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* --- Payment Details Section --- */}
+                            {selectedItemDetails.total_price && (
+                                <>
+                                    <Separator />
+                                    <div className="flex justify-between items-center">
+                                        <Label htmlFor="payment-gateway">Payment Method</Label>
+                                        <p id="payment-gateway" className="text-muted-foreground">{selectedItemDetails.payment_gateway}</p>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <Label htmlFor="total-price" className="font-semibold">Total Price</Label>
+                                        <p id="total-price" className="font-semibold">{selectedItemDetails.total_price}</p>
                                     </div>
                                 </>
                             )}
