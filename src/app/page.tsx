@@ -191,16 +191,15 @@ export default function Home() {
         const cartInfo = meta.cart_info || {};
         
         // Use the trip_name sent directly from the API
-        let trip_name = item.trip_name || 'Unknown Trip';
+        const trip_name = item.trip_name || 'Unknown Trip';
 
         // Recalculate price and currency just in case, but primarily use cart_info
-        let totalPrice = parseFloat(cartInfo.totals?.total || '0');
+        const totalPrice = parseFloat(cartInfo.totals?.total || '0');
         let currencySymbol = cartInfo.currency === 'USD' ? '$' : cartInfo.currency;
 
         if (orderItems) {
             try {
                 // This part can serve as a fallback if cart_info is missing details
-                // but we won't redeclare totalPrice here to avoid confusion.
                 for (const key in orderItems) {
                     if (orderItems.hasOwnProperty(key)) {
                          if (orderItems[key].currency && orderItems[key].currency.symbol) {
@@ -208,13 +207,11 @@ export default function Home() {
                          }
                     }
                 }
-            } catch { /* FIX 5: Removed unused 'e' variable */ }
+            } catch { /* Removed unused 'e' variable */ }
         }
         
-        // FIX 4: Changed 'let' to 'const'
         const formattedPrice = `${currencySymbol || '$'}${totalPrice.toFixed(2)}`;
 
-        // FIX 3: Removed unused 'bookingSettings' and accessed meta directly.
         const travelers = parseInt(meta.wp_travel_engine_booking_setting?.place_order?.traveler || '0');
         const status = meta.wp_travel_engine_booking_status || 'N/A';
         const payment_gateway = meta.wp_travel_engine_booking_payment_method || 'N/A';
@@ -388,4 +385,4 @@ export default function Home() {
         </main>
     );
 }
-            
+
