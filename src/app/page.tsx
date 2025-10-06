@@ -68,7 +68,17 @@ interface ItemDetails extends ApiItem {
     total_price?: string;
     payment_gateway?: string;
 }
-
+// Helper function to convert the VAPID key
+function urlBase64ToUint8Array(base64String: string) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/\-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
 // Reusable component for the loading spinner
 function Loader({ size = 'w-10 h-10' }) {
     return (
@@ -91,6 +101,10 @@ export default function Home() {
     // FIX 2: Removed unused userId state
     // const [userId, setUserId] = useState<number | null>(null);
 
+    // --- NEW: Notification State ---
+    const [isSubscribed, setIsSubscribed] = useState(false);
+    const [notificationPermission, setNotificationPermission] = useState('default');
+    const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
     // Check for stored login on initial load
     useEffect(() => {
         const storedAuth = localStorage.getItem('providerAuth');
@@ -102,6 +116,40 @@ export default function Home() {
         }
         setIsLoading(false);
     }, []);
+        useEffect(() => {
+                // Check for cached data first
+                const cachedBookings = localStorage.getItem('cachedBookings');
+                if (cachedBookings) setBookings(JSON.parse(cachedBookings));
+
+                const cachedEnquiries = localStorage.getItem('cachedEnquiries');
+                if (cachedEnquiries) setEnquiries(JSON.parse(cachedEnquiries));
+
+                // Check auth status
+                const storedAuth = localStorage.getItem('providerAuth');
+                if (storedAuth) {
+                    const auth: AuthPayload = JSON.parse(storedAuth);
+                    setCurrentUsername(auth.username);
+                    setIsLoggedIn(true);
+                }
+                setIsLoading(false);
+            }, []);
+
+        // Effect for handling notifications and service worker
+        useEffect(() => {
+            if ('serviceWorker' in navigator && 'PushManager' in window) {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(swReg => {
+                        console.log('Service Worker is registered', swReg);
+                        setNotificationPermission(Notification.permission);
+                        swReg.pushManager.getSubscription().then(subscription => {
+                            setIsSubscribed(!!subscription);
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Service Worker Error', error);
+                    });
+            }
+        }, []);    
 
     // Fetch data when user logs in
     useEffect(() => {
@@ -109,6 +157,40 @@ export default function Home() {
             fetchData();
         }
     }, [isLoggedIn]);
+
+    // --- NOTIFICATION LOGIC ---
+    const handleSubscription = async () => {
+        setIsSubscriptionLoading(true);
+        const storedAuthRaw = localStorage.getItem('providerAuth');
+        if (!storedAuthRaw) return;
+        
+        const storedAuth: AuthPayload = JSON.parse(storedAuthRaw);
+        
+        if (Notification.permission === 'denied') {
+            alert('You have blocked notifications. Please enable them in your browser settings.');
+            setIsSubscriptionLoading(false);
+            return;
+        }
+
+        const swRegistration = await navigator.serviceWorker.ready;
+        const subscription = await swRegistration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!)
+        });
+
+        // Send subscription to backend
+        await fetch(`${storedAuth.siteUrl}/wp-json/my-listings/v1/save-subscription`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${storedAuth.token}`
+            },
+            body: JSON.stringify(subscription)
+        });
+
+        setIsSubscribed(true);
+        setIsSubscriptionLoading(false);
+    };
 
     // JWT LOGIN LOGIC
     const handleLogin = async (e: React.FormEvent) => {
@@ -286,6 +368,33 @@ export default function Home() {
                          <div className="flex justify-center items-center h-64"><Loader /></div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div>
+                                {/* --- NEW: Notification Subscription Button --- */}
+                                <Card className="mb-8">
+                                    <CardHeader>
+                                        <CardTitle>Notifications</CardTitle>
+                                        <CardDescription>Get notified instantly when a new booking or enquiry arrives.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent>
+                                        {notificationPermission === 'granted' && isSubscribed && (
+                                            <p className="text-sm text-green-600">You are subscribed to notifications.</p>
+                                        )}
+                                        {notificationPermission === 'granted' && !isSubscribed && (
+                                            <Button onClick={handleSubscription} disabled={isSubscriptionLoading}>
+                                                {isSubscriptionLoading ? 'Subscribing...' : 'Enable Notifications'}
+                                            </Button>
+                                        )}
+                                        {notificationPermission === 'default' && (
+                                            <Button onClick={handleSubscription} disabled={isSubscriptionLoading}>
+                                                {isSubscriptionLoading ? 'Subscribing...' : 'Enable Notifications'}
+                                            </Button>
+                                        )}
+                                        {notificationPermission === 'denied' && (
+                                            <p className="text-sm text-red-600">You have blocked notifications. Please enable them in your browser settings to subscribe.</p>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </div>
                             <div>
                                 <h2 className="text-2xl font-bold mb-4">Your Bookings</h2>
                                 {bookings.length === 0 ? (
