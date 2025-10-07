@@ -119,7 +119,7 @@ function NotificationCard({ isSubscribed, permission, isLoading, handleSubscript
     const renderContent = () => {
         if (permission === 'granted') {
             if (isSubscribed) {
-                return <p className="text-sm text-green-600 flex items-center"><BellRing className="w-4 h-4 mr-2"/> You're subscribed to notifications.</p>;
+                return <p className="text-sm text-green-600 flex items-center"><BellRing className="w-4 h-4 mr-2"/> You&apore subscribed to notifications.</p>;
             }
             return <Button onClick={handleSubscription} disabled={isLoading}>{isLoading ? 'Subscribing...' : 'Enable Notifications'}</Button>;
         }
