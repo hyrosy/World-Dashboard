@@ -2,15 +2,15 @@ import { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader } from "@/components/ui/loader";
+import { Loader } from "../ui/loader";
 import { ItemCard } from "./ItemCard";
 import { DetailsDialog } from "./DetailsDialog";
-import { ItemDetails } from '../../lib/utils';
+import { ApiItem, ItemDetails } from '../../lib/utils';
 import { Bell, BellRing, BookUser, HelpCircle, LogOut, RefreshCw } from 'lucide-react';
 
 type AuthUser = { username: string };
-type ApiData = { bookings: ItemDetails[], enquiries: ItemDetails[] };
-type Notifications = { 
+type ApiData = { bookings: ApiItem[], enquiries: ApiItem[] };
+type Notifications = {
     isSubscribed: boolean;
     permission: NotificationPermission;
     isLoading: boolean;
@@ -46,19 +46,19 @@ export function Dashboard({ user, data, notifications, onLogout, onRefresh, isRe
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <DataSection 
+                    <DataSection
                         title="Your Bookings"
                         icon={<BookUser className="w-6 h-6 text-muted-foreground" />}
                         items={data.bookings}
                         isLoading={isRefreshing && data.bookings.length === 0}
-                        onCardClick={setSelectedItem}
+                        onCardClick={(item) => setSelectedItem(item as ItemDetails)}
                     />
-                     <DataSection 
+                     <DataSection
                         title="Your Enquiries"
                         icon={<HelpCircle className="w-6 h-6 text-muted-foreground" />}
                         items={data.enquiries}
                         isLoading={isRefreshing && data.enquiries.length === 0}
-                        onCardClick={setSelectedItem}
+                        onCardClick={(item) => setSelectedItem(item as ItemDetails)}
                     />
                 </div>
 
@@ -67,7 +67,7 @@ export function Dashboard({ user, data, notifications, onLogout, onRefresh, isRe
                 </aside>
             </div>
 
-            <DetailsDialog 
+            <DetailsDialog
                 item={selectedItem}
                 isOpen={!!selectedItem}
                 onClose={() => setSelectedItem(null)}
@@ -79,9 +79,9 @@ export function Dashboard({ user, data, notifications, onLogout, onRefresh, isRe
 interface DataSectionProps {
     title: string;
     icon: React.ReactNode;
-    items: ItemDetails[];
+    items: ApiItem[];
     isLoading: boolean;
-    onCardClick: (item: ItemDetails) => void;
+    onCardClick: (item: ApiItem) => void;
 }
 
 function DataSection({ title, icon, items, isLoading, onCardClick }: DataSectionProps) {
@@ -102,10 +102,10 @@ function DataSection({ title, icon, items, isLoading, onCardClick }: DataSection
             ) : (
                 <div className="space-y-4">
                     {items.map((item, index) => (
-                        <ItemCard 
-                            key={item.id} 
-                            item={item} 
-                            onClick={() => onCardClick(item)} 
+                        <ItemCard
+                            key={item.id}
+                            item={item}
+                            onClick={() => onCardClick(item)}
                             index={index}
                          />
                     ))}
