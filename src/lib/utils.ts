@@ -6,8 +6,8 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 
-// --- TYPE DEFINITIONS (These should ideally live in a dedicated types file, e.g., lib/types.ts) ---
-interface BookingMeta {
+// --- TYPE DEFINITIONS ---
+export interface BookingMeta {
     wp_travel_engine_booking_status?: string;
     wp_travel_engine_booking_payment_method?: string;
     cart_info?: { totals?: { total?: string }; currency?: string };
@@ -16,7 +16,7 @@ interface BookingMeta {
     wte_order_items?: { [key: string]: { currency?: { symbol?: string } } };
 }
 
-interface ApiItem {
+export interface ApiItem {
     id: number;
     date: string;
     title: { rendered: string };
@@ -62,3 +62,4 @@ export const formatItemDetails = (item: ApiItem): ItemDetails => {
         payment_gateway,
     };
 };
+

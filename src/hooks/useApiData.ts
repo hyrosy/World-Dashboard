@@ -1,12 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-
-// Assuming ApiItem is defined in a types file
-interface ApiItem {
-    id: number;
-    date: string;
-    title: { rendered: string };
-    [key: string]: any;
-}
+import { ApiItem } from '../lib/utils';
 
 interface ApiData {
     bookings: ApiItem[];
@@ -59,3 +52,4 @@ export function useApiData(auth: { isLoggedIn: boolean; token: string | null; si
 
     return { data, isLoading, fetchData };
 }
+
