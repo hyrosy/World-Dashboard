@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSWRConfig } from 'swr'; // Import useSWRConfig
 
 function urlBase64ToUint8Array(base64String: string) {
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -15,6 +16,28 @@ export function useNotifications(auth: { token: string | null; siteUrl: string |
     const [isSubscribed, setIsSubscribed] = useState(false);
     const [permission, setPermission] = useState<NotificationPermission>('default');
     const [isLoading, setIsLoading] = useState(false);
+    const { mutate } = useSWRConfig(); // Get the global mutate function from SWR
+
+    
+    useEffect(() => {
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        const handleMessage = (event: MessageEvent) => {
+            // Listen for the specific message from our service worker
+            if (event.data && event.data.type === 'REFRESH_DATA') {
+            console.log('Refresh message received from service worker. Mutating API data...');
+            // This is the key part: it tells SWR to re-fetch the dashboard data.
+            mutate(`${process.env.NEXT_PUBLIC_WP_URL}/wp-json/my-listings/v1/dashboard`);
+            }
+        };
+
+        navigator.serviceWorker.addEventListener('message', handleMessage);
+
+        // Cleanup the event listener when the component unmounts
+        return () => {
+            navigator.serviceWorker.removeEventListener('message', handleMessage);
+        };
+        }
+    }, [mutate]); // Add mutate to the dependency array
 
     useEffect(() => {
         if ('serviceWorker' in navigator && 'PushManager' in window) {

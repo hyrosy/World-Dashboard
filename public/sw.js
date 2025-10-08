@@ -26,6 +26,28 @@ self.addEventListener('notificationclick', function (event) {
 
   // Open the URL associated with the notification.
   event.waitUntil(
-    clients.openWindow(event.notification.data.url)
+    self.registration.showNotification(title, options)
+      .then(() => {
+        // ** NEW CODE STARTS HERE **
+        // After showing the notification, send a message to all active clients (your app).
+        return self.clients.matchAll({
+          type: 'window',
+          includeUncontrolled: true
+        }).then((clientList) => {
+          if (clientList.length > 0) {
+            clientList[0].postMessage({ type: 'REFRESH_DATA' });
+          }
+        });
+        // ** NEW CODE ENDS HERE **
+      })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = event.notification.data.url || '/';
+
+  event.waitUntil(
+    clients.openWindow(urlToOpen)
   );
 });
